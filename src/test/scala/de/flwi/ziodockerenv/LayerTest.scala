@@ -20,6 +20,7 @@ object LayerTest extends DefaultRunnableSpec {
 
       trait Service {
         def runContainer(containerService: DockerComposeService): ZIO[Any, Nothing, RunningDockerComposeService]
+        def stopContainer(running: RunningDockerComposeService): ZIO[Any, Nothing, Unit]
 
         def log(str: String): ZIO[Any, Nothing, Unit]
       }
@@ -31,6 +32,10 @@ object LayerTest extends DefaultRunnableSpec {
             dockerComposeService: DockerComposeService): ZIO[Any, Nothing, RunningDockerComposeService] = {
             log(s"starting service ${dockerComposeService.name}") *> ZIO.succeed(
               RunningDockerComposeService(dockerComposeService.name, 5432))
+          }
+
+          override def stopContainer(runnning: RunningDockerComposeService): ZIO[Any, Nothing, Unit] = {
+            log(s"stopping service $runnning")
           }
           override def log(str: String): ZIO[Any, Nothing, Unit] = zio.console.putStrLn(str).provide(console)
         })
@@ -46,7 +51,8 @@ object LayerTest extends DefaultRunnableSpec {
 
       val live: ZLayer[DockerModule, Nothing, PostgresDockerModule] = ZLayer.fromFunctionManaged { docker =>
         Managed
-          .fromEffect(docker.get.runContainer(DockerComposeService("postgres")))
+          .make(docker.get.runContainer(DockerComposeService("postgres")))(runningContainer =>
+            docker.get.stopContainer(runningContainer))
           .map(runningPostgres =>
             new Service {
               def runCommandOnPostgres(cmd: String): ZIO[PostgresDockerModule, Nothing, Unit] = {
